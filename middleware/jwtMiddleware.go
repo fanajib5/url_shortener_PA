@@ -9,17 +9,22 @@ import (
 )
 
 type JwtCustomClaims struct {
-	Id    int    `json:"id"`
-	Name  string `json:"name"`
-	Admin bool   `json:"admin"`
+	Id        int    `json:"id"`
+	Name      string `json:"name"`
+	Admin     bool   `json:"admin"`
+	Customize bool   `json:"customize"`
 	jwt.StandardClaims
 }
 
-func GenerateToken(userId int, name string, admin bool) (string, error) {
+func GenerateToken(userId int, name string, admin bool, customize bool) (string, error) {
+	// tk := &_controller.ExpToken{}
+	// tk.ExpAt = time.Now().Add(time.Minute * 5).Unix()
+
 	claims := &JwtCustomClaims{
-		Id:    userId,
-		Name:  name,
-		Admin: admin,
+		Id:        userId,
+		Name:      name,
+		Admin:     admin,
+		Customize: customize,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().Add(time.Minute * 5).Unix(),
 		},
