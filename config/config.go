@@ -1,10 +1,7 @@
 package config
 
 import (
-	"log"
-	"os"
-
-	"github.com/joho/godotenv"
+	"fmt"
 
 	_model "github.com/fanajib5/url_shortener_PA/models"
 
@@ -14,42 +11,29 @@ import (
 
 var DB *gorm.DB
 
-type DotEnv struct {
-	DB_HOST       string
-	DB_PORT       string
-	DB_NAME       string
-	DB_USER       string
-	DB_PWD        string
-	SECRET_HMAC   string
-	SECRET_NANOID string
-}
+func InitDB() {
 
-func (env *DotEnv) LoadDotEnv() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
+	dbName := "url_shortener"
+
+	config := map[string]string{
+		"DB_Username": "root",
+		"DB_Password": "",
+		"DB_Port":     "3306",
+		"DB_Host":     "127.0.0.1",
+		"DB_Name":     dbName,
 	}
 
-	env.DB_HOST = os.Getenv("DB_HOST")
-	env.DB_PORT = os.Getenv("DB_PORT")
-	env.DB_NAME = os.Getenv("DB_NAME")
-	env.DB_USER = os.Getenv("DB_USER")
-	env.DB_PWD = os.Getenv("DB_PASSWORD")
-	env.SECRET_HMAC = os.Getenv("SECRET_HMAC")
-	env.SECRET_NANOID = os.Getenv("SECRET_NANOID_ALPHANUMERIC")
-}
-
-func InitDB() {
-	env := &DotEnv{}
-	env.LoadDotEnv()
+	connectionString := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&parseTime=True&loc=Local",
+		config["DB_Username"],
+		config["DB_Password"],
+		config["DB_Host"],
+		config["DB_Port"],
+		config["DB_Name"])
 
 	var errConDB error
-
-	dsn := env.DB_USER + ":" + env.DB_PWD + "@tcp(" + env.DB_HOST + ":" + env.DB_PORT + ")/" + env.DB_NAME + "?charset=utf8mb4&parseTime=True&loc=Local"
-
-	DB, errConDB = gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	DB, errConDB = gorm.Open(mysql.Open(connectionString), &gorm.Config{})
 	if errConDB != nil {
-		panic(errConDB.Error())
+		panic(errConDB)
 	}
 	initMigrate()
 }

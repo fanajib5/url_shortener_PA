@@ -5,11 +5,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
-	_config "github.com/fanajib5/url_shortener_PA/config"
-	_m "github.com/fanajib5/url_shortener_PA/middleware"
-	_model "github.com/fanajib5/url_shortener_PA/models"
+	_config "github.com/fanajib5/github.com/fanajib5/url_shortener_PA/config"
+	_constant "github.com/fanajib5/github.com/fanajib5/url_shortener_PA/constants"
+	_m "github.com/fanajib5/github.com/fanajib5/url_shortener_PA/middleware"
+	_model "github.com/fanajib5/github.com/fanajib5/url_shortener_PA/models"
+	"github.com/go-playground/validator"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/labstack/echo"
 	nanoid "github.com/matoous/go-nanoid/v2"
 )
@@ -45,10 +47,17 @@ func CreateShortUrl(c echo.Context) error {
 	urlData := _model.UrlData{}
 	c.Bind(&urlData)
 	u := &UrlCollection{}
-	env := &_config.DotEnv{}
-	env.LoadDotEnv()
 
-	nanoId, errNanoId := nanoid.Generate(env.SECRET_NANOID, 6)
+	// validate input data
+	validationErrors := validator.New().Struct(urlData)
+	if validationErrors != nil {
+		return c.JSON(http.StatusUnprocessableEntity, map[string]interface{}{
+			"response_code": int(http.StatusUnprocessableEntity),
+			"message":       validationErrors.Error(),
+		})
+	}
+
+	nanoId, errNanoId := nanoid.Generate(_constant.SECRET_NANOID, 6)
 	if errNanoId != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
 			"response_code": int(http.StatusInternalServerError),
@@ -87,8 +96,6 @@ func CreateShortUrl(c echo.Context) error {
 	})
 }
 
-// END OF create short url for guest (not-logged user)
-
 // redirect short url to the actual url (all user whether logged user or not)
 func RedirectClippedUrl(c echo.Context) error {
 	urlData := _model.UrlData{}
@@ -118,26 +125,12 @@ func RedirectClippedUrl(c echo.Context) error {
 		})
 	}
 
-	// print hit_counter just to make sure that counterAddition works well hehehe
-	// fmt.Println("hit_counter:", urlData.HitCounter)
-
 	u.ActualUrl = urlData.Url
 	u.ShortUrl = urlData.ShortUrl
 	u.RedirectUrl = urlData.Url
 
-	//
-	// user can directly go to the origin url by hit redirect_url
-	// from the frontend route management CMIIW
-	//
-
-	return c.JSON(http.StatusFound, map[string]interface{}{
-		"response_code": int(http.StatusFound),
-		"message":       "OK - Clipped URL found",
-		"data":          u,
-	})
+	return c.Redirect(http.StatusFound, u.RedirectUrl)
 }
-
-// END OF redirect short url to the actual url (all user whether logged user or not)
 
 // ------------------------------------------------------------------------------------------------
 //                            this is logged user section, thanks :D
@@ -145,7 +138,7 @@ func RedirectClippedUrl(c echo.Context) error {
 // create custom url for logged user
 func CustomShortUrl(c echo.Context) error {
 	a := &UserRole{}
-	a.ValidateAdmin(c)
+	a.ValidateUser(c)
 	if !a.Customize {
 		return c.JSON(http.StatusUnauthorized, map[string]interface{}{
 			"response_code": int(http.StatusUnauthorized),
@@ -155,30 +148,35 @@ func CustomShortUrl(c echo.Context) error {
 		})
 	}
 
-	// token := &jwt.Token{}
-	// if !token.Valid {
-	// 	return c.JSON(http.StatusUnauthorized, map[string]interface{}{
-	// 		"response_code": int(http.StatusUnauthorized),
-	// 		"message":       "It seems your token has been invalid, please login again!",
-	// 		"register_url":  c.Request().Host + "/register",
-	// 		"login_url":     c.Request().Host + "/login",
-	// 	})
-	// }
-
 	urlData := _model.UrlData{}
 	c.Bind(&urlData)
 	u := &UrlCollection{}
+
+	// validate input data
+	validationErrors := validator.New().Struct(urlData)
+	if validationErrors != nil {
+		return c.JSON(http.StatusUnprocessableEntity, map[string]interface{}{
+			"response_code": int(http.StatusUnprocessableEntity),
+			"message":       validationErrors.Error(),
+		})
+	}
 
 	udt := &UserData{}
 	udt.ParseJWT(c)
 
 	buffUrl := urlData.ShortUrl
-	urlData.ShortUrl = c.Request().Host + "/" + buffUrl
+	if buffUrl == "" {
+		nanoId, _ := nanoid.Generate(_constant.SECRET_NANOID, 6)
+		urlData.ShortUrl = c.Request().Host + "/" + nanoId
+	} else {
+		urlData.ShortUrl = c.Request().Host + "/" + buffUrl
+	}
+
 	urlData.Custom = true
 	urlData.CreatedBy = udt.Id
 	urlData.UpdatedBy = udt.Id
 
-	errStoreUrl := _config.DB.Model(&urlData).FirstOrInit(&urlData).Error
+	errStoreUrl := _config.DB.Model(&urlData).Save(&urlData).Error
 	if errStoreUrl != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
 			"response_code": int(http.StatusInternalServerError),
@@ -196,28 +194,16 @@ func CustomShortUrl(c echo.Context) error {
 	})
 }
 
-// END OF create custom url for logged user
-
 // get all clipped url which created by user
 func GetShortUrlList(c echo.Context) error {
-	a := &UserRole{}
-	a.ValidateAdmin(c)
-	if !a.Customize {
-		return c.JSON(http.StatusUnauthorized, map[string]interface{}{
-			"response_code": int(http.StatusUnauthorized),
-			"message":       "You don't have permission to get clipped URL list, please login or register",
-			"register_url":  c.Request().Host + "/register",
-			"login_url":     c.Request().Host + "/login",
-		})
-	}
-
-	urlData := _model.UrlData{}
+	urlData := []_model.UrlData{}
 	c.Bind(&urlData)
 
 	udt := UserData{}
 	udt.ParseJWT(c)
 
-	errSearchedUrl := _config.DB.Model(&urlData).Where("created_by = ? and deleted_at is NULL", udt.Id).Find(&urlData).Error
+	result := _config.DB.Where("created_by = ? and deleted_at is NULL", udt.Id).Find(&urlData)
+	errSearchedUrl := result.Error
 	if errSearchedUrl != nil {
 		return c.JSON(http.StatusNotFound, map[string]interface{}{
 			"response_code": int(http.StatusNotFound),
@@ -225,44 +211,19 @@ func GetShortUrlList(c echo.Context) error {
 		})
 	}
 
-	var count int64
-	errCountUrlList := _config.DB.Model(&urlData).Where("created_by = ? and deleted_at is NULL", udt.Id).Group("created_by").Count(&count).Error
-	if errCountUrlList != nil {
-		return c.JSON(http.StatusNotFound, map[string]interface{}{
-			"response_code": int(http.StatusNotFound),
-			"message":       errCountUrlList.Error() + " - hmmm... it seems that you are didn't using our service yet! :D",
-		})
-	}
-
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"response_code": int(http.StatusOK),
 		"message":       "OK",
 		"data":          urlData,
-		"records_total": count,
+		"records_total": result.RowsAffected,
 	})
 }
 
-// END OF get all clipped url which created by user
-
 // get all clipped url which created by user
 func GetShortUrl(c echo.Context) error {
-	a := &UserRole{}
-	a.ValidateAdmin(c)
-	if !a.Customize {
-		return c.JSON(http.StatusUnauthorized, map[string]interface{}{
-			"response_code": int(http.StatusUnauthorized),
-			"message":       "You don't have permission to get clipped URL data, please login or register",
-			"register_url":  c.Request().Host + "/register",
-			"login_url":     c.Request().Host + "/login",
-		})
-	}
-
 	urlData := _model.UrlData{}
 	urlId, _ := strconv.Atoi(c.Param("id"))
 	c.Bind(&urlData)
-
-	udt := UserData{}
-	udt.ParseJWT(c)
 
 	errSearchedUrl := _config.DB.Model(&urlData).Where("id = ?  and deleted_at is NULL", urlId).Find(&urlData).Error
 	if errSearchedUrl != nil {
@@ -279,12 +240,10 @@ func GetShortUrl(c echo.Context) error {
 	})
 }
 
-// END OF get all clipped url which created by user
-
 // get all clipped url which created by user
 func UpdateShortUrl(c echo.Context) error {
 	a := &UserRole{}
-	a.ValidateAdmin(c)
+	a.ValidateUser(c)
 	if !a.Customize {
 		return c.JSON(http.StatusUnauthorized, map[string]interface{}{
 			"response_code": int(http.StatusUnauthorized),
@@ -298,19 +257,24 @@ func UpdateShortUrl(c echo.Context) error {
 	urlId, _ := strconv.Atoi(c.Param("id"))
 	c.Bind(&urlData)
 
-	udt := UserData{}
-	udt.ParseJWT(c)
-
-	// we checking url data before user make changes to their data :D
-	checkChangedUrlData := _config.DB.Model(&urlData).Where("short_url = ?", urlData.ShortUrl).Find(&urlData).Error
-	if checkChangedUrlData == nil {
-		return c.JSON(http.StatusFound, map[string]interface{}{
-			"response_code": int(http.StatusFound),
-			"message":       checkChangedUrlData.Error() + " - Ooppss! Your new short url has been used by other user. PLease use another one :D",
+	// validate input data
+	validationErrors := validator.New().Struct(urlData)
+	if validationErrors != nil {
+		return c.JSON(http.StatusUnprocessableEntity, map[string]interface{}{
+			"response_code": int(http.StatusUnprocessableEntity),
+			"message":       validationErrors.Error(),
 		})
 	}
 
-	updateUrlData := _config.DB.Model(&urlData).Where("id = ?  and deleted_at is NULL", urlId).Find(&urlData).UpdateColumns(map[string]interface{}{
+	buffUrl := urlData.ShortUrl
+	if buffUrl == "" {
+		nanoId, _ := nanoid.Generate(_constant.SECRET_NANOID, 6)
+		urlData.ShortUrl = c.Request().Host + "/" + nanoId
+	} else {
+		urlData.ShortUrl = c.Request().Host + "/" + buffUrl
+	}
+
+	updateUrlData := _config.DB.Model(&urlData).Where("id = ? and deleted_at is NULL", urlId).UpdateColumns(map[string]interface{}{
 		"short_url": urlData.ShortUrl,
 	})
 
@@ -321,6 +285,14 @@ func UpdateShortUrl(c echo.Context) error {
 		})
 	}
 
+	errSearchedUrl := _config.DB.Model(&urlData).Where("id = ?  and deleted_at is NULL", urlId).Find(&urlData).Error
+	if errSearchedUrl != nil {
+		return c.JSON(http.StatusNotFound, map[string]interface{}{
+			"response_code": int(http.StatusNotFound),
+			"message":       errSearchedUrl.Error() + " - hmmm... it seems that you are didn't using our service yet! :D",
+		})
+	}
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"response_code": int(http.StatusOK),
 		"message":       "OK - url data updated",
@@ -328,14 +300,14 @@ func UpdateShortUrl(c echo.Context) error {
 	})
 }
 
-// END OF get all clipped url which created by user
+// function to delete shorten url data
 func DeleteShortUrl(c echo.Context) error {
 	a := &UserRole{}
-	a.ValidateAdmin(c)
+	a.ValidateUser(c)
 	if !a.Customize {
 		return c.JSON(http.StatusUnauthorized, map[string]interface{}{
 			"response_code": int(http.StatusUnauthorized),
-			"message":       "You don't have permission to update the clipped URL data, please login or register",
+			"message":       "You don't have permission to delete the clipped URL data, please login or register",
 			"register_url":  c.Request().Host + "/register",
 			"login_url":     c.Request().Host + "/login",
 		})
@@ -344,9 +316,6 @@ func DeleteShortUrl(c echo.Context) error {
 	urlData := _model.UrlData{}
 	urlId, _ := strconv.Atoi(c.Param("id"))
 	c.Bind(&urlData)
-
-	udt := UserData{}
-	udt.ParseJWT(c)
 
 	// soft delete procedure
 	deleteData := _config.DB.Model(&urlData).Where("id = ?  and deleted_at is NULL", urlId).Find(&urlData).UpdateColumns(map[string]interface{}{

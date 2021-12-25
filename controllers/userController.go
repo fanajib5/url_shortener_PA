@@ -1,107 +1,125 @@
 package controller
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
+	"strconv"
+	"time"
 
 	_config "github.com/fanajib5/url_shortener_PA/config"
-	_m "github.com/fanajib5/url_shortener_PA/middleware"
 	_model "github.com/fanajib5/url_shortener_PA/models"
 
 	"github.com/labstack/echo"
 )
 
-func HMAC_SHA(rawPwd string) string {
-	env := &_config.DotEnv{}
-	env.LoadDotEnv()
-
-	// Create a new HMAC by defining the hash type and the key (as byte array)
-	h := hmac.New(sha256.New, []byte(env.SECRET_HMAC))
-
-	// Write Data to it
-	h.Write([]byte(rawPwd))
-
-	// Get result and encode as hexadecimal string
-	sha := hex.EncodeToString(h.Sum(nil))
-
-	return sha
-}
-
-func RegisterUser(c echo.Context) error {
-	user := _model.User{}
-	c.Bind(&user)
-
-	// store user password in temporary variable, then hashing it
-	buffer_pwd := user.Password
-	user.Password = HMAC_SHA(buffer_pwd)
-
-	errRegister := _config.DB.Save(&user).Error
-	if errRegister != nil {
-		return c.JSON(http.StatusUnprocessableEntity, map[string]interface{}{
-			"response_code": int(http.StatusUnprocessableEntity),
-			"message":       errRegister.Error(),
+// get all clipped url which created by user
+func GetUserData(c echo.Context) error {
+	a := &UserRole{}
+	a.ValidateUser(c)
+	if !a.Customize {
+		return c.JSON(http.StatusUnauthorized, map[string]interface{}{
+			"response_code": int(http.StatusUnauthorized),
+			"message":       "You don't have permission to get clipped URL data, please login or register",
+			"register_url":  c.Request().Host + "/register",
+			"login_url":     c.Request().Host + "/login",
 		})
 	}
 
-	userResponse := &UserResponse{
-		Username: user.Username,
-		Name:     user.Fullname,
-		Admin:    user.Admin,
+	user := _model.User{}
+	userId, _ := strconv.Atoi(c.Param("id"))
+	c.Bind(&user)
+
+	errSearchUserData := _config.DB.Model(&user).Where("id = ? and deleted_at is NULL", userId).Find(&user).Error
+	if errSearchUserData != nil {
+		return c.JSON(http.StatusNotFound, map[string]interface{}{
+			"response_code": int(http.StatusNotFound),
+			"message":       errSearchUserData.Error() + " - hmmm... it seems that your profile deleted or you did'not register yet! :D",
+			"register_url":  c.Request().Host + "/register",
+			"login_url":     c.Request().Host + "/login",
+		})
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"response_code": int(http.StatusOK),
-		"message":       "OK - Success Register",
-		"user_data":     userResponse,
+		"message":       "OK - user data found",
+		"data":          user,
 	})
 }
 
-func LoginUser(c echo.Context) error {
+// get all clipped url which created by user
+func UpdateUserData(c echo.Context) error {
+	a := &UserRole{}
+	a.ValidateUser(c)
+	if !a.Customize {
+		return c.JSON(http.StatusUnauthorized, map[string]interface{}{
+			"response_code": int(http.StatusUnauthorized),
+			"message":       "You don't have permission to update the clipped URL data, please login or register",
+			"register_url":  c.Request().Host + "/register",
+			"login_url":     c.Request().Host + "/login",
+		})
+	}
+
 	user := _model.User{}
+	userId, _ := strconv.Atoi(c.Param("id"))
 	c.Bind(&user)
 
-	// hashing user password
-	shaPwd := HMAC_SHA(user.Password)
+	updateUrlData := _config.DB.Model(&user).Where("id = ? and deleted_at is NULL", userId).UpdateColumns(map[string]interface{}{
+		"fullname": user.Fullname,
+		"email":    user.Email,
+	})
 
-	errLogin := _config.DB.Where("username = ? AND password = ?", user.Username, shaPwd).First(&user).Error
-	if errLogin != nil {
-		return c.JSON(http.StatusUnprocessableEntity, map[string]interface{}{
-			"response_code": int(http.StatusUnprocessableEntity),
-			"message":       errLogin.Error(),
+	if updateUrlData.Error != nil {
+		return c.JSON(http.StatusConflict, map[string]interface{}{
+			"response_code": int(http.StatusConflict),
+			"message":       updateUrlData.Error.Error() + " - it seems that your input data conflict with our specification :D",
 		})
 	}
 
-	storedPwd := user.Password
-	if !hmac.Equal([]byte(shaPwd), []byte(storedPwd)) {
-		return c.JSON(http.StatusUnprocessableEntity, map[string]interface{}{
-			"response_code": int(http.StatusUnprocessableEntity),
-			"message":       errLogin.Error(),
+	errSearchedUrl := _config.DB.Model(&user).Where("id = ? and deleted_at is NULL", userId).Find(&user).Error
+	if errSearchedUrl != nil {
+		return c.JSON(http.StatusNotFound, map[string]interface{}{
+			"response_code": int(http.StatusNotFound),
+			"message":       errSearchedUrl.Error() + " - hmmm... it seems that you are didn't using our service yet! :D",
 		})
-	}
-
-	token, errGen := _m.GenerateToken(user.Id, user.Fullname, user.Admin, true)
-	if errGen != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
-			"response_code": int(http.StatusInternalServerError),
-			"message":       errLogin.Error(),
-		})
-	}
-
-	// x := &_m.JwtCustomClaims{}
-
-	userResponse := &UserResponse{
-		Username: user.Username,
-		Name:     user.Fullname,
-		Admin:    user.Admin,
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"response_code":    int(http.StatusOK),
-		"message":          "OK - Success Login",
-		"user_data":        userResponse,
-		"token":            token,
-		"token_expires_at": 300,
+		"response_code": int(http.StatusOK),
+		"message":       "OK - url data updated",
+		"data":          user,
+	})
+}
+
+// END OF get all clipped url which created by user
+func DeleteUser(c echo.Context) error {
+	a := &UserRole{}
+	a.ValidateUser(c)
+	if !a.Customize {
+		return c.JSON(http.StatusUnauthorized, map[string]interface{}{
+			"response_code": int(http.StatusUnauthorized),
+			"message":       "You don't have permission to delete user, please login or register",
+			"register_url":  c.Request().Host + "/register",
+			"login_url":     c.Request().Host + "/login",
+		})
+	}
+
+	user := _model.User{}
+	userID, _ := strconv.Atoi(c.Param("id"))
+	c.Bind(&user)
+
+	// soft delete procedure
+	deleteData := _config.DB.Model(&user).Where("id = ? and deleted_at is NULL", userID).Find(&user).UpdateColumns(map[string]interface{}{
+		"deleted_at": time.Now(),
+	})
+
+	if deleteData.Error != nil {
+		return c.JSON(http.StatusNotFound, map[string]interface{}{
+			"response_code": int(http.StatusNotFound),
+			"message":       deleteData.Error.Error() + " - it seems that your data has deleted :D",
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"response_code": int(http.StatusOK),
+		"message":       "OK - url data deleted succesfully",
 	})
 }
