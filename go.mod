@@ -1,10 +1,9 @@
-module url_shortener_PA
+module github.com/fanajib5/url_shortener_PA
 
 go 1.17
 
 require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
-	github.com/fanajib5/url_shortener_PA v0.0.0-20211224164332-a018c47d3fba
 	github.com/gavv/httpexpect v2.0.0+incompatible
 	github.com/go-playground/validator v9.31.0+incompatible
 	github.com/labstack/echo v3.3.10+incompatible
@@ -28,7 +27,6 @@ require (
 	github.com/imkira/go-interpol v1.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.3 // indirect
-	github.com/joho/godotenv v1.4.0 // indirect
 	github.com/klauspost/compress v1.13.4 // indirect
 	github.com/kr/pretty v0.3.0 // indirect
 	github.com/labstack/gommon v0.3.1 // indirect

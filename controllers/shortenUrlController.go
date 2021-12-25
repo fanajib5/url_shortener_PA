@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"time"
 
-	_config "github.com/fanajib5/github.com/fanajib5/url_shortener_PA/config"
-	_constant "github.com/fanajib5/github.com/fanajib5/url_shortener_PA/constants"
-	_m "github.com/fanajib5/github.com/fanajib5/url_shortener_PA/middleware"
-	_model "github.com/fanajib5/github.com/fanajib5/url_shortener_PA/models"
+	_config "github.com/fanajib5/url_shortener_PA/config"
+	_constant "github.com/fanajib5/url_shortener_PA/constants"
+	_m "github.com/fanajib5/url_shortener_PA/middleware"
+	_model "github.com/fanajib5/url_shortener_PA/models"
 	"github.com/go-playground/validator"
 
 	"github.com/dgrijalva/jwt-go"
